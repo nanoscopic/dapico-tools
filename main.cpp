@@ -1498,26 +1498,12 @@ auto help_cmd = std::shared_ptr<help_command>(new help_command());
 
 vector<std::shared_ptr<cmd>> commands {
         std::shared_ptr<cmd>(new info_command()),
-        std::shared_ptr<cmd>(new config_command()),
     #if HAS_LIBUSB
         std::shared_ptr<cmd>(new load_command()),
     #endif
-    #if HAS_MBEDTLS
-        std::shared_ptr<cmd>(new encrypt_command()),
-        std::shared_ptr<cmd>(new seal_command()),
-    #endif
-        std::shared_ptr<cmd>(new link_command()),
     #if HAS_LIBUSB
-        std::shared_ptr<cmd>(new save_command()),
-        std::shared_ptr<cmd>(new erase_command()),
-        std::shared_ptr<cmd>(new verify_command()),
         reboot_cmd,
     #endif
-        std::shared_ptr<cmd>(new otp_command()),
-        std::shared_ptr<cmd>(new partition_command()),
-        std::shared_ptr<cmd>(new uf2_command()),
-        std::shared_ptr<cmd>(new version_command()),
-        std::shared_ptr<cmd>(new coprodis_command()),
         help_cmd
 };
 
