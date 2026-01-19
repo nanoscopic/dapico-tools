@@ -22,4 +22,8 @@ target_compile_definitions(pico-reboot PRIVATE NO_PICO_PLATFORM=1)
 
 target_compile_options(pico-reboot PRIVATE ${LIBUSB_CFLAGS_OTHER})
 
+target_link_directories(pico-reboot PRIVATE ${LIBUSB_LIBRARY_DIRS})
+
+target_link_options(pico-reboot PRIVATE ${LIBUSB_LDFLAGS_OTHER})
+
 target_link_libraries(pico-reboot PRIVATE ${LIBUSB_LIBRARIES})
