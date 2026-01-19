@@ -13,6 +13,21 @@
 
 #ifndef NO_PICO_PLATFORM
 #include "pico/platform.h"
+#else
+#ifndef __packed
+#if defined(__GNUC__)
+#define __packed __attribute__((packed))
+#else
+#define __packed
+#endif
+#endif
+#ifndef __aligned
+#if defined(__GNUC__)
+#define __aligned(x) __attribute__((aligned(x)))
+#else
+#define __aligned(x)
+#endif
+#endif
 #endif
 
 /** \file picoboot.h
