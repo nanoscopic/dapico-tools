@@ -18,7 +18,7 @@ namespace {
 constexpr uint16_t kVendorIdRaspberryPi = 0x2e8a;
 constexpr uint16_t kProductIdRp2040UsbBoot = 0x0003;
 constexpr uint16_t kProductIdRp2350UsbBoot = 0x000f;
-constexpr uint32_t kFlashSectorSize = FLASH_SECTOR_ERASE_SIZE;
+constexpr uint32_t kFlashSectorSize = 4096;
 constexpr uint32_t kFlashPageSize = 256;
 constexpr int kUsbTimeoutMs = 3000;
 
