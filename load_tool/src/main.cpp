@@ -167,6 +167,13 @@ int picoboot_reset(libusb_device_handle *handle, const PicobootInterface &iface)
                                    PICOBOOT_IF_RESET, 0, iface.interface_number, nullptr, 0, kUsbTimeoutMs);
 }
 
+int picoboot_cmd_status(libusb_device_handle *handle, const PicobootInterface &iface, picoboot_cmd_status &status) {
+    return libusb_control_transfer(handle,
+                                   LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_RECIPIENT_INTERFACE | LIBUSB_ENDPOINT_IN,
+                                   PICOBOOT_IF_CMD_STATUS, 0, iface.interface_number,
+                                   reinterpret_cast<uint8_t *>(&status), sizeof(status), kUsbTimeoutMs);
+}
+
 int picoboot_exit_xip(libusb_device_handle *handle, const PicobootInterface &iface) {
     picoboot_cmd cmd{};
     cmd.bCmdId = PC_EXIT_XIP;
@@ -201,7 +208,23 @@ int picoboot_exec(libusb_device_handle *handle, const PicobootInterface &iface, 
     cmd.bCmdSize = sizeof(cmd.address_only_cmd);
     cmd.address_only_cmd.dAddr = addr;
     cmd.dTransferLength = 0;
-    return send_picoboot_command(handle, iface, cmd, nullptr, 0);
+    int ret = send_picoboot_command(handle, iface, cmd, nullptr, 0);
+    if (ret == 0) {
+        return 0;
+    }
+    if (ret == LIBUSB_ERROR_NO_DEVICE) {
+        return 0;
+    }
+    picoboot_cmd_status status{};
+    int status_ret = picoboot_cmd_status(handle, iface, status);
+    if (status_ret == static_cast<int>(sizeof(status))) {
+        if (status.dStatusCode == PICOBOOT_OK || status.dStatusCode == PICOBOOT_REBOOTING) {
+            return 0;
+        }
+    } else if (status_ret == LIBUSB_ERROR_NO_DEVICE) {
+        return 0;
+    }
+    return ret;
 }
 
 uint32_t align_down(uint32_t value, uint32_t align) {
