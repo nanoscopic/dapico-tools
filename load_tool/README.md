@@ -33,8 +33,15 @@ The resulting binary is `build/pico-load`.
 ./build/pico-load path/to/firmware.elf
 ```
 
+Enable flash writes (disabled by default):
+
+```bash
+./build/pico-load --flash path/to/firmware.elf
+```
+
 Optional flags:
 
+- `--flash` allow writing flash segments (default is RAM-only).
 - `--verbose` enable libusb debug output.
 
 ## Notes

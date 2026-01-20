@@ -40,7 +40,9 @@ struct Range {
 };
 
 void print_usage(const char *argv0) {
-    std::cout << "Usage: " << argv0 << " [--verbose] <file.elf>\n";
+    std::cout << "Usage: " << argv0 << " [--flash] [--verbose] <file.elf>\n"
+              << "  --flash    Allow writing flash segments (disabled by default)\n"
+              << "  --verbose  Enable libusb debug output\n";
 }
 
 bool is_picoboot_interface(const libusb_interface_descriptor &desc, uint8_t &ep_in, uint8_t &ep_out) {
@@ -232,11 +234,14 @@ uint32_t segment_address(const elf32_ph_entry &segment) {
 
 int main(int argc, char **argv) {
     bool verbose = false;
+    bool allow_flash = false;
     std::string filename;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
-        if (arg == "--verbose" || arg == "-v") {
+        if (arg == "--flash") {
+            allow_flash = true;
+        } else if (arg == "--verbose" || arg == "-v") {
             verbose = true;
         } else if (arg == "--help" || arg == "-h") {
             print_usage(argv[0]);
@@ -295,6 +300,7 @@ int main(int argc, char **argv) {
     std::vector<std::pair<uint32_t, std::vector<uint8_t>>> ram_segments;
     std::map<uint32_t, std::vector<uint8_t>> flash_pages;
     std::vector<Range> flash_erase_ranges;
+    bool skipped_flash_segments = false;
 
     try {
         auto stream = std::make_shared<std::fstream>(filename, std::ios::in | std::ios::binary);
@@ -317,6 +323,10 @@ int main(int argc, char **argv) {
                 continue;
             }
             if (is_flash_address(addr)) {
+                if (!allow_flash) {
+                    skipped_flash_segments = true;
+                    continue;
+                }
                 uint32_t end = addr + static_cast<uint32_t>(data.size());
                 uint32_t erase_start = align_down(addr, kFlashSectorSize);
                 uint32_t erase_end = align_up(end, kFlashSectorSize);
@@ -344,6 +354,16 @@ int main(int argc, char **argv) {
     }
 
     int ret = 0;
+    if (!allow_flash && flash_pages.empty() && ram_segments.empty()) {
+        std::cerr << "No loadable RAM segments found (flash segments skipped by default). Use --flash to enable flash writes.\n";
+        libusb_release_interface(handle, match->picoboot.interface_number);
+        libusb_close(handle);
+        libusb_exit(ctx);
+        return 1;
+    }
+    if (skipped_flash_segments) {
+        std::cout << "Skipping flash segments (use --flash to enable flash writes).\n";
+    }
     if (!flash_pages.empty()) {
         ret = picoboot_exit_xip(handle, match->picoboot);
         if (ret != 0) {
