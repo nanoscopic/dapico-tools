@@ -167,7 +167,7 @@ int picoboot_reset(libusb_device_handle *handle, const PicobootInterface &iface)
                                    PICOBOOT_IF_RESET, 0, iface.interface_number, nullptr, 0, kUsbTimeoutMs);
 }
 
-int picoboot_cmd_status(libusb_device_handle *handle, const PicobootInterface &iface, picoboot_cmd_status &status) {
+int picoboot_get_cmd_status(libusb_device_handle *handle, const PicobootInterface &iface, picoboot_cmd_status &status) {
     return libusb_control_transfer(handle,
                                    LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_RECIPIENT_INTERFACE | LIBUSB_ENDPOINT_IN,
                                    PICOBOOT_IF_CMD_STATUS, 0, iface.interface_number,
@@ -216,7 +216,7 @@ int picoboot_exec(libusb_device_handle *handle, const PicobootInterface &iface, 
         return 0;
     }
     picoboot_cmd_status status{};
-    int status_ret = picoboot_cmd_status(handle, iface, status);
+    int status_ret = picoboot_get_cmd_status(handle, iface, status);
     if (status_ret == static_cast<int>(sizeof(status))) {
         if (status.dStatusCode == PICOBOOT_OK || status.dStatusCode == PICOBOOT_REBOOTING) {
             return 0;
