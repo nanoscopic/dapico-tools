@@ -41,7 +41,7 @@ struct Range {
 
 void print_usage(const char *argv0) {
     std::cout << "Usage: " << argv0 << " [--flash] [--verbose] <file.elf>\n"
-              << "  --flash    Allow writing flash segments (disabled by default)\n"
+              << "  --flash    Allow writing flash segments instead of RAM-mirroring\n"
               << "  --verbose  Enable libusb debug output\n";
 }
 
@@ -206,6 +206,10 @@ bool is_flash_address(uint32_t addr) {
     return addr >= FLASH_START && addr < FLASH_END_RP2350;
 }
 
+bool is_sram_address(uint32_t addr) {
+    return addr >= SRAM_START && addr < SRAM_END_RP2350;
+}
+
 std::vector<Range> merge_ranges(std::vector<Range> ranges) {
     if (ranges.empty()) {
         return ranges;
@@ -229,6 +233,18 @@ uint32_t segment_address(const elf32_ph_entry &segment) {
         return segment.paddr;
     }
     return segment.vaddr;
+}
+
+bool map_flash_to_sram(uint32_t addr, uint32_t size, uint32_t &mapped_addr) {
+    if (addr < FLASH_START) {
+        return false;
+    }
+    uint32_t offset = addr - FLASH_START;
+    mapped_addr = SRAM_START + offset;
+    if (mapped_addr < SRAM_START || mapped_addr + size > SRAM_END_RP2350) {
+        return false;
+    }
+    return true;
 }
 } // namespace
 
@@ -301,6 +317,7 @@ int main(int argc, char **argv) {
     std::map<uint32_t, std::vector<uint8_t>> flash_pages;
     std::vector<Range> flash_erase_ranges;
     bool skipped_flash_segments = false;
+    bool mirrored_flash_segments = false;
 
     try {
         auto stream = std::make_shared<std::fstream>(filename, std::ios::in | std::ios::binary);
@@ -324,7 +341,13 @@ int main(int argc, char **argv) {
             }
             if (is_flash_address(addr)) {
                 if (!allow_flash) {
-                    skipped_flash_segments = true;
+                    uint32_t mapped_addr = 0;
+                    if (!map_flash_to_sram(addr, static_cast<uint32_t>(data.size()), mapped_addr)) {
+                        skipped_flash_segments = true;
+                        continue;
+                    }
+                    mirrored_flash_segments = true;
+                    ram_segments.emplace_back(mapped_addr, std::move(data));
                     continue;
                 }
                 uint32_t end = addr + static_cast<uint32_t>(data.size());
@@ -355,14 +378,17 @@ int main(int argc, char **argv) {
 
     int ret = 0;
     if (!allow_flash && flash_pages.empty() && ram_segments.empty()) {
-        std::cerr << "No loadable RAM segments found (flash segments skipped by default). Use --flash to enable flash writes.\n";
+        std::cerr << "No loadable RAM segments found (flash segments skipped). Use --flash to enable flash writes.\n";
         libusb_release_interface(handle, match->picoboot.interface_number);
         libusb_close(handle);
         libusb_exit(ctx);
         return 1;
     }
+    if (mirrored_flash_segments) {
+        std::cout << "Mirroring flash segments into SRAM (use --flash to write flash instead).\n";
+    }
     if (skipped_flash_segments) {
-        std::cout << "Skipping flash segments (use --flash to enable flash writes).\n";
+        std::cout << "Skipping flash segments that do not fit in SRAM (use --flash to enable flash writes).\n";
     }
     if (!flash_pages.empty()) {
         ret = picoboot_exit_xip(handle, match->picoboot);
