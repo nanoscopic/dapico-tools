@@ -40,8 +40,9 @@ struct Range {
 };
 
 void print_usage(const char *argv0) {
-    std::cout << "Usage: " << argv0 << " [--flash] [--verbose] <file.elf>\n"
+    std::cout << "Usage: " << argv0 << " [--flash] [--no-exec] [--verbose] <file.elf>\n"
               << "  --flash    Allow writing flash segments instead of RAM-mirroring\n"
+              << "  --no-exec  Skip executing the loaded image\n"
               << "  --verbose  Enable libusb debug output\n";
 }
 
@@ -194,6 +195,15 @@ int picoboot_write(libusb_device_handle *handle, const PicobootInterface &iface,
     return send_picoboot_command(handle, iface, cmd, const_cast<uint8_t *>(buffer), size);
 }
 
+int picoboot_exec(libusb_device_handle *handle, const PicobootInterface &iface, uint32_t addr) {
+    picoboot_cmd cmd{};
+    cmd.bCmdId = PC_EXEC;
+    cmd.bCmdSize = sizeof(cmd.address_only_cmd);
+    cmd.address_only_cmd.dAddr = addr;
+    cmd.dTransferLength = 0;
+    return send_picoboot_command(handle, iface, cmd, nullptr, 0);
+}
+
 uint32_t align_down(uint32_t value, uint32_t align) {
     return value & ~(align - 1);
 }
@@ -251,12 +261,15 @@ bool map_flash_to_sram(uint32_t addr, uint32_t size, uint32_t &mapped_addr) {
 int main(int argc, char **argv) {
     bool verbose = false;
     bool allow_flash = false;
+    bool exec_after = true;
     std::string filename;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         if (arg == "--flash") {
             allow_flash = true;
+        } else if (arg == "--no-exec") {
+            exec_after = false;
         } else if (arg == "--verbose" || arg == "-v") {
             verbose = true;
         } else if (arg == "--help" || arg == "-h") {
@@ -318,6 +331,7 @@ int main(int argc, char **argv) {
     std::vector<Range> flash_erase_ranges;
     bool skipped_flash_segments = false;
     bool mirrored_flash_segments = false;
+    uint32_t entry_point = 0;
 
     try {
         auto stream = std::make_shared<std::fstream>(filename, std::ios::in | std::ios::binary);
@@ -327,6 +341,7 @@ int main(int argc, char **argv) {
         elf_file elf;
         elf.read_file(stream);
 
+        entry_point = elf.header().entry;
         for (const auto &segment : elf.segments()) {
             if (!segment.is_load() || segment.filez == 0) {
                 continue;
@@ -432,6 +447,36 @@ int main(int argc, char **argv) {
             if (ret != 0) {
                 std::cerr << "Flash write failed at 0x" << std::hex << page.first << " (libusb error " << std::dec << ret << ").\n";
                 break;
+            }
+        }
+    }
+
+    if (ret == 0 && exec_after) {
+        if (entry_point == 0) {
+            std::cerr << "ELF entry point is zero; cannot execute.\n";
+            ret = 1;
+        } else {
+            uint32_t exec_addr = entry_point;
+            if (!allow_flash && is_flash_address(entry_point)) {
+                uint32_t mapped_addr = 0;
+                if (map_flash_to_sram(entry_point, 4, mapped_addr)) {
+                    exec_addr = mapped_addr;
+                } else {
+                    std::cerr << "Entry point 0x" << std::hex << entry_point
+                              << " cannot be mirrored into SRAM. Use --flash to run from flash.\n";
+                    ret = 1;
+                }
+            } else if (!allow_flash && !is_sram_address(entry_point) && !is_flash_address(entry_point)) {
+                std::cerr << "Entry point 0x" << std::hex << entry_point << " is not in flash or SRAM.\n";
+                ret = 1;
+            }
+            if (ret == 0) {
+                ret = picoboot_exec(handle, match->picoboot, exec_addr);
+                if (ret != 0) {
+                    std::cerr << "Exec failed at 0x" << std::hex << exec_addr << " (libusb error " << std::dec << ret << ").\n";
+                } else {
+                    std::cout << "Executing at 0x" << std::hex << exec_addr << ".\n";
+                }
             }
         }
     }

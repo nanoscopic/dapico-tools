@@ -42,6 +42,7 @@ Enable flash writes (disabled by default; flash segments mirror into SRAM when p
 Optional flags:
 
 - `--flash` allow writing flash segments (default mirrors flash segments into SRAM).
+- `--no-exec` skip executing the loaded image.
 - `--verbose` enable libusb debug output.
 
 ## Notes
