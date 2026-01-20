@@ -103,7 +103,7 @@ std::optional<DeviceMatch> find_device() {
     }
 
     io_iterator_t iterator = 0;
-    if (IOServiceGetMatchingServices(kIOMasterPortDefault, matching, &iterator) != kIOReturnSuccess) {
+    if (IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iterator) != kIOReturnSuccess) {
         return std::nullopt;
     }
 
