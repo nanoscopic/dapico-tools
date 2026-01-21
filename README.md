@@ -1,15 +1,15 @@
-# Pico Tool (focused Apple-only tooling)
+# DryArk Pico Tools (focused Apple-only tooling)
 
 This repository is intentionally slimmed down to only the tools I authored:
 
-- `reboot_tool`
-- `load_tool`
+- `dapico-reboot`
+- `dapico-load`
 
 Everything else from the original fork has been removed so these tools can stand alone, stay easy to reason about, and be used without pulling in a larger cross-platform stack.
 
 ## Why these tools exist
 
-The goal of this project is to provide efficient, small, **Apple-official API** ways to perform these features on macOS. Instead of mixing platform-specific work into a broad, cross-platform toolchain, these utilities focus on the native Apple surfaces (like IOKit where appropriate) and keep the codebase focused and lightweight.
+The goal of this project is to provide efficient, small tools that use **official Apple APIs** for USB operations on macOS. Instead of mixing platform-specific work into a broad, cross-platform toolchain, these utilities focus on native Apple interfaces (like IOKit where appropriate) and keep the codebase focused and lightweight.
 
 That narrow scope makes the tools:
 
@@ -19,10 +19,10 @@ That narrow scope makes the tools:
 
 ## Tool overview
 
-### `reboot_tool`
+### `dapico-reboot`
 A focused reboot utility for Pico devices that uses the USB reset interface and BOOTSEL picoboot commands. This tool is macOS-specific in this repo, matching the macOS-only support described in its standalone README and build requirements.
 
-### `load_tool`
+### `dapico-load`
 A macOS-specific loader that uses the system IOKit USB stack directly and only accepts **stripped ELF** inputs (no UF2/BIN support).
 
 ## Why keep them standalone?

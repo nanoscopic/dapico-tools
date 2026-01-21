@@ -1,4 +1,4 @@
-# Pico Load (macOS)
+# Dapico Load (macOS)
 
 Minimal, self-contained loader extracted from picotool. This tool loads a **stripped ELF** onto a Raspberry Pi RP2040/RP2350 device in BOOTSEL mode using the PICOBOOT USB interface.
 
@@ -17,18 +17,18 @@ cmake -S . -B build
 cmake --build build
 ```
 
-The resulting binary is `build/pico-load`.
+The resulting binary is `build/dapico-load`.
 
 ## Usage
 
 ```bash
-./build/pico-load path/to/firmware.elf
+./build/dapico-load path/to/firmware.elf
 ```
 
 Enable flash writes (disabled by default; flash segments mirror into SRAM when possible):
 
 ```bash
-./build/pico-load --flash path/to/firmware.elf
+./build/dapico-load --flash path/to/firmware.elf
 ```
 
 Optional flags:
