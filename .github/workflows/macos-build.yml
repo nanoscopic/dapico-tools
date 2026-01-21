@@ -11,11 +11,19 @@ on:
 
 jobs:
   build-macos:
-    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-13
+            arch: x86_64
+          - os: macos-14
+            arch: arm64
+    runs-on: ${{ matrix.os }}
     env:
       BUILD_TYPE: Release
       RELEASE_VERSION: ${{ github.event.inputs.version }}
-      CMAKE_OSX_ARCHITECTURES: arm64;x86_64
+      CMAKE_OSX_ARCHITECTURES: ${{ matrix.arch }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -33,9 +41,54 @@ jobs:
           cmake -S load_tool_iokit -B load_tool_iokit/build -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DCMAKE_OSX_ARCHITECTURES="${CMAKE_OSX_ARCHITECTURES}"
           cmake --build load_tool_iokit/build --config ${BUILD_TYPE}
 
+      - name: Collect build artifacts
+        run: |
+          mkdir -p dist/${CMAKE_OSX_ARCHITECTURES}
+          cp reboot_tool/build/pico-reboot dist/${CMAKE_OSX_ARCHITECTURES}/pico-reboot
+          cp load_tool_iokit/build/pico-load-iokit dist/${CMAKE_OSX_ARCHITECTURES}/pico-load-iokit
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}-binaries
+          path: dist/${{ matrix.arch }}/*
+
+  package-macos:
+    runs-on: macos-14
+    needs: build-macos
+    env:
+      RELEASE_VERSION: ${{ github.event.inputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download arm64 artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-arm64-binaries
+          path: dist/arm64
+
+      - name: Download x86_64 artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-x86_64-binaries
+          path: dist/x86_64
+
+      - name: Create universal binaries
+        run: |
+          mkdir -p dist/universal
+          lipo -create \
+            dist/arm64/pico-reboot \
+            dist/x86_64/pico-reboot \
+            -output dist/universal/pico-reboot
+          lipo -create \
+            dist/arm64/pico-load-iokit \
+            dist/x86_64/pico-load-iokit \
+            -output dist/universal/pico-load-iokit
+
       - name: Package artifacts
         run: |
-          mkdir -p dist
+          mkdir -p dist/packages
           if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && -n "${RELEASE_VERSION}" ]]; then
             VERSION=${RELEASE_VERSION}
           elif [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
@@ -43,22 +96,22 @@ jobs:
           else
             VERSION=${GITHUB_SHA:0:7}
           fi
-          cp reboot_tool/build/pico-reboot dist/pico-reboot
-          cp load_tool_iokit/build/pico-load-iokit dist/pico-load-iokit
-          tar -czf "dist/pico-reboot-${VERSION}-macos.tar.gz" -C dist pico-reboot
-          tar -czf "dist/pico-load-iokit-${VERSION}-macos.tar.gz" -C dist pico-load-iokit
+          cp dist/universal/pico-reboot dist/packages/pico-reboot
+          cp dist/universal/pico-load-iokit dist/packages/pico-load-iokit
+          tar -czf "dist/packages/pico-reboot-${VERSION}-macos.tar.gz" -C dist/packages pico-reboot
+          tar -czf "dist/packages/pico-load-iokit-${VERSION}-macos.tar.gz" -C dist/packages pico-load-iokit
 
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
         with:
           name: macos-binaries
-          path: dist/*.tar.gz
+          path: dist/packages/*.tar.gz
 
       - name: Upload release assets
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.tar.gz
+          files: dist/packages/*.tar.gz
 
       - name: Create release
         if: github.event_name == 'workflow_dispatch'
@@ -66,4 +119,4 @@ jobs:
         with:
           tag_name: ${{ env.RELEASE_VERSION }}
           name: Release ${{ env.RELEASE_VERSION }}
-          files: dist/*.tar.gz
+          files: dist/packages/*.tar.gz
