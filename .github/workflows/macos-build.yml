@@ -1,0 +1,53 @@
+name: Build macOS binaries
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    env:
+      BUILD_TYPE: Release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install libusb
+        run: brew install libusb
+
+      - name: Build pico-reboot
+        run: |
+          cmake -S reboot_tool -B reboot_tool/build -DCMAKE_BUILD_TYPE=${BUILD_TYPE}
+          cmake --build reboot_tool/build --config ${BUILD_TYPE}
+
+      - name: Build pico-load-iokit
+        run: |
+          cmake -S load_tool_iokit -B load_tool_iokit/build -DCMAKE_BUILD_TYPE=${BUILD_TYPE}
+          cmake --build load_tool_iokit/build --config ${BUILD_TYPE}
+
+      - name: Package artifacts
+        run: |
+          mkdir -p dist
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            VERSION=${GITHUB_REF_NAME}
+          else
+            VERSION=${GITHUB_SHA:0:7}
+          fi
+          cp reboot_tool/build/pico-reboot dist/pico-reboot
+          cp load_tool_iokit/build/pico-load-iokit dist/pico-load-iokit
+          tar -czf "dist/pico-reboot-${VERSION}-macos.tar.gz" -C dist pico-reboot
+          tar -czf "dist/pico-load-iokit-${VERSION}-macos.tar.gz" -C dist pico-load-iokit
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-binaries
+          path: dist/*.tar.gz
+
+      - name: Upload release assets
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.tar.gz
