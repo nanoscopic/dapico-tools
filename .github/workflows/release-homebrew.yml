@@ -69,11 +69,16 @@ jobs:
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               output.write(f"is_new={str(is_new).lower()}\n")
 
+          def strip_blank_line_whitespace(text: str) -> str:
+              return re.sub(r"^[ \t]+$", "", text, flags=re.M)
+
           if is_new:
               formula_path.parent.mkdir(parents=True, exist_ok=True)
               new_content = template_path.read_text(encoding="utf-8")
               formula_path.write_text(
-                  new_content.replace("@URL@", url).replace("@SHA256@", sha256),
+                  strip_blank_line_whitespace(
+                      new_content.replace("@URL@", url).replace("@SHA256@", sha256)
+                  ),
                   encoding="utf-8",
               )
               raise SystemExit(0)
@@ -81,6 +86,7 @@ jobs:
           content = formula_path.read_text()
           new_content, url_count = re.subn(r'^\s*url\s+"[^"]+"\s*$', f'  url "{url}"', content, count=1, flags=re.M)
           new_content, sha_count = re.subn(r'^\s*sha256\s+"[^"]+"\s*$', f'  sha256 "{sha256}"', new_content, count=1, flags=re.M)
+          new_content = strip_blank_line_whitespace(new_content)
 
           if url_count == 0 or sha_count == 0:
             raise SystemExit("Failed to locate url/sha256 entries in formula.")
