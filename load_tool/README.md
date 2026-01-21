@@ -1,22 +1,14 @@
-# Pico Load (macOS/Linux)
+# Pico Load (macOS)
 
 Minimal, self-contained loader extracted from picotool. This tool loads a **stripped ELF** onto a Raspberry Pi RP2040/RP2350 device in BOOTSEL mode using the PICOBOOT USB interface.
 
+This macOS build uses the system IOKit USB stack directly (no `libusb`).
+
 ## Requirements
 
-- macOS or Linux
+- macOS
 - CMake 3.16+
-- `libusb-1.0`
-
-Install libusb:
-
-```bash
-# macOS
-brew install libusb
-
-# Debian/Ubuntu
-sudo apt-get install libusb-1.0-0-dev
-```
+- Xcode Command Line Tools (for IOKit/CoreFoundation headers)
 
 ## Build
 
@@ -43,7 +35,6 @@ Optional flags:
 
 - `--flash` allow writing flash segments (default mirrors flash segments into SRAM).
 - `--no-exec` skip executing the loaded image.
-- `--verbose` enable libusb debug output.
 
 ## Notes
 
