@@ -23,6 +23,7 @@ class DapicoTools < Formula
     system "#{bin}/dapico-load", "--help"
     testpath.install resource("test-elf")
     output = shell_output("#{bin}/dapico-load --dryrun #{testpath}/test.elf")
+    puts "dapico-load output:\n#{output}"
     assert_match "write RAM 0x20000000 (33500 bytes", output
     assert_match "write RAM 0x200082dc (5832 bytes", output
     assert_match "execute at 0x200001e9", output
