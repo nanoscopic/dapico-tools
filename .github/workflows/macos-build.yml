@@ -28,8 +28,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install libusb
+      - name: Install libusb (arm64)
+        if: matrix.arch == 'arm64'
         run: brew install libusb
+
+      - name: Install libusb (x86_64)
+        if: matrix.arch == 'x86_64'
+        run: |
+          arch -x86_64 /usr/local/bin/brew install libusb pkg-config
 
       - name: Build pico-reboot
         run: |
