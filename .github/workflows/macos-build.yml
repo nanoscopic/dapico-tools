@@ -42,7 +42,7 @@ jobs:
             NONINTERACTIVE=1 /usr/bin/arch -x86_64 /bin/bash -lc \
               "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
           fi
-          /usr/bin/arch -x86_64 /usr/local/bin/brew install libusb pkg-config
+          /usr/bin/arch -x86_64 /usr/local/bin/brew install libusb pkg-config cmake
 
       - name: Build pico-reboot (arm64)
         if: matrix.arch == 'arm64'
@@ -56,8 +56,8 @@ jobs:
           /usr/bin/arch -x86_64 /usr/bin/env \
             PKG_CONFIG_PATH="/usr/local/lib/pkgconfig" \
             CMAKE_PREFIX_PATH="/usr/local" \
-            cmake -S reboot_tool -B reboot_tool/build -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DCMAKE_OSX_ARCHITECTURES="${CMAKE_OSX_ARCHITECTURES}"
-          /usr/bin/arch -x86_64 cmake --build reboot_tool/build --config ${BUILD_TYPE}
+            /usr/local/bin/cmake -S reboot_tool -B reboot_tool/build -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DCMAKE_OSX_ARCHITECTURES="${CMAKE_OSX_ARCHITECTURES}"
+          /usr/bin/arch -x86_64 /usr/local/bin/cmake --build reboot_tool/build --config ${BUILD_TYPE}
 
       - name: Build pico-load-iokit (arm64)
         if: matrix.arch == 'arm64'
@@ -71,8 +71,8 @@ jobs:
           /usr/bin/arch -x86_64 /usr/bin/env \
             PKG_CONFIG_PATH="/usr/local/lib/pkgconfig" \
             CMAKE_PREFIX_PATH="/usr/local" \
-            cmake -S load_tool_iokit -B load_tool_iokit/build -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DCMAKE_OSX_ARCHITECTURES="${CMAKE_OSX_ARCHITECTURES}"
-          /usr/bin/arch -x86_64 cmake --build load_tool_iokit/build --config ${BUILD_TYPE}
+            /usr/local/bin/cmake -S load_tool_iokit -B load_tool_iokit/build -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DCMAKE_OSX_ARCHITECTURES="${CMAKE_OSX_ARCHITECTURES}"
+          /usr/bin/arch -x86_64 /usr/local/bin/cmake --build load_tool_iokit/build --config ${BUILD_TYPE}
 
       - name: Collect build artifacts
         run: |
