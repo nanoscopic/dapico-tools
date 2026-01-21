@@ -1,11 +1,10 @@
 class DapicoTools < Formula
-  desc "macOS-only USB tools for Raspberry Pi Pico devices"
+  desc "macOS USB tools for RP2040-based boards"
   homepage "https://github.com/nanoscopic/dapico-tools"
   url "@URL@"
   sha256 "@SHA256@"
-  version "@VERSION@"
+  license "BSD-3-Clause"
   depends_on "cmake" => :build
-  depends_on :macos
 
   def install
     system "cmake", "-S", ".", "-B", "build", *std_cmake_args
