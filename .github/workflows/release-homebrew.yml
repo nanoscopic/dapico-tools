@@ -7,10 +7,6 @@ on:
         description: "Release tag to publish (e.g. 0.1.2)"
         required: true
         type: string
-      commit_summary:
-        description: "Override homebrew-core commit summary (50 chars max)."
-        required: false
-        type: string
       commit_body:
         description: "Detailed homebrew-core commit description."
         required: true
@@ -115,7 +111,6 @@ jobs:
         env:
           HOMEBREW_CORE_PAT: ${{ secrets.HOMEBREW_CORE_PAT }}
           TAG: ${{ inputs.tag }}
-          COMMIT_SUMMARY: ${{ inputs.commit_summary }}
           COMMIT_BODY: ${{ inputs.commit_body }}
         run: |
           set -euo pipefail
@@ -133,10 +128,10 @@ jobs:
             exit 0
           fi
           git add Formula/d/dapico-tools.rb
-          if [ -n "${COMMIT_SUMMARY}" ]; then
-            commit_summary="${COMMIT_SUMMARY}"
+          if [ "${{ steps.update-formula.outputs.is_new }}" = "true" ]; then
+            commit_summary="dapico-tools ${TAG} (new formula)"
           else
-            commit_summary="Update dapico-tools to version ${TAG}"
+            commit_summary="dapico-tools ${TAG}"
           fi
           if [ -n "${COMMIT_BODY}" ]; then
             commit_body="${COMMIT_BODY}"
