@@ -26,8 +26,8 @@ jobs:
             echo "No formula changes to commit."
             exit 0
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "${GITHUB_ACTOR}"
+          git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
           git add Formula/dapico-tools.rb
           git commit -m "Update Homebrew formula for ${{ inputs.tag }}"
 
