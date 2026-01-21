@@ -80,6 +80,7 @@ jobs:
                     sha256 "{sha256}"
                     license "BSD-3-Clause"
                     depends_on "cmake" => :build
+                    depends_on :macos
 
                     def install
                       system "cmake", "-S", ".", "-B", "build", *std_cmake_args
