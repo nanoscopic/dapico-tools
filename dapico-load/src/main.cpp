@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "boot/picoboot.h"
+#include "dryrun.h"
 #include "elf/elf.h"
 
 namespace {
@@ -55,9 +56,10 @@ struct MemoryLayout {
 };
 
 void print_usage(const char *argv0) {
-    std::cout << "Usage: " << argv0 << " [--flash] [--no-exec] <file.elf>\n"
+    std::cout << "Usage: " << argv0 << " [--flash] [--no-exec] [--dryrun] <file.elf>\n"
               << "  --flash    Allow writing flash segments instead of RAM-mirroring\n"
-              << "  --no-exec  Skip executing the loaded image\n";
+              << "  --no-exec  Skip executing the loaded image\n"
+              << "  --dryrun   Print planned operations without using a connected device\n";
 }
 
 uint32_t cf_number_to_uint32(CFTypeRef value) {
@@ -421,6 +423,7 @@ bool map_flash_to_sram(uint32_t addr, uint32_t size, const MemoryLayout &layout,
 int main(int argc, char **argv) {
     bool allow_flash = false;
     bool exec_after = true;
+    bool dryrun = false;
     std::string filename;
 
     for (int i = 1; i < argc; ++i) {
@@ -429,6 +432,8 @@ int main(int argc, char **argv) {
             allow_flash = true;
         } else if (arg == "--no-exec") {
             exec_after = false;
+        } else if (arg == "--dryrun") {
+            dryrun = true;
         } else if (arg == "--help" || arg == "-h") {
             print_usage(argv[0]);
             return 0;
@@ -444,6 +449,10 @@ int main(int argc, char **argv) {
     if (filename.empty()) {
         print_usage(argv[0]);
         return 2;
+    }
+
+    if (dryrun) {
+        return run_dryrun(filename, allow_flash, exec_after);
     }
 
     auto match = find_device();

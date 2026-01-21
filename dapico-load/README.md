@@ -35,6 +35,7 @@ Optional flags:
 
 - `--flash` allow writing flash segments (default mirrors flash segments into SRAM).
 - `--no-exec` skip executing the loaded image.
+- `--dryrun` print planned operations without using a connected device.
 
 ## Notes
 
