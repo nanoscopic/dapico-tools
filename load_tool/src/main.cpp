@@ -25,8 +25,10 @@ constexpr uint32_t kFlashSectorSize = 4096;
 constexpr uint32_t kFlashPageSize = 256;
 constexpr uint32_t kUsbTimeoutMs = 3000;
 constexpr uint32_t kFlashStart = 0x10000000;
-constexpr uint32_t kFlashEndRp2350 = 0x14000000;
 constexpr uint32_t kSramStart = 0x20000000;
+constexpr uint32_t kFlashEndRp2040 = 0x11000000;
+constexpr uint32_t kFlashEndRp2350 = 0x14000000;
+constexpr uint32_t kSramEndRp2040 = 0x20042000;
 constexpr uint32_t kSramEndRp2350 = 0x20082000;
 
 struct PicobootInterface {
@@ -38,12 +40,18 @@ struct PicobootInterface {
 
 struct DeviceMatch {
     IOUSBDeviceInterface **device{};
+    uint16_t product_id{};
     PicobootInterface picoboot{};
 };
 
 struct Range {
     uint32_t start;
     uint32_t end;
+};
+
+struct MemoryLayout {
+    uint32_t flash_end;
+    uint32_t sram_end;
 };
 
 void print_usage(const char *argv0) {
@@ -201,7 +209,8 @@ std::optional<DeviceMatch> find_device() {
             }
 
             if (pipe_in != 0 && pipe_out != 0) {
-                match = DeviceMatch{device, PicobootInterface{interface_number, pipe_in, pipe_out, iface}};
+                match = DeviceMatch{device, static_cast<uint16_t>(product_id),
+                                    PicobootInterface{interface_number, pipe_in, pipe_out, iface}};
                 break;
             }
 
@@ -356,12 +365,19 @@ uint32_t align_up(uint32_t value, uint32_t align) {
     return (value + align - 1) & ~(align - 1);
 }
 
-bool is_flash_address(uint32_t addr) {
-    return addr >= kFlashStart && addr < kFlashEndRp2350;
+MemoryLayout memory_layout_for_product(uint16_t product_id) {
+    if (product_id == kProductIdRp2040UsbBoot) {
+        return MemoryLayout{kFlashEndRp2040, kSramEndRp2040};
+    }
+    return MemoryLayout{kFlashEndRp2350, kSramEndRp2350};
 }
 
-bool is_sram_address(uint32_t addr) {
-    return addr >= kSramStart && addr < kSramEndRp2350;
+bool is_flash_address(uint32_t addr, const MemoryLayout &layout) {
+    return addr >= kFlashStart && addr < layout.flash_end;
+}
+
+bool is_sram_address(uint32_t addr, const MemoryLayout &layout) {
+    return addr >= kSramStart && addr < layout.sram_end;
 }
 
 std::vector<Range> merge_ranges(std::vector<Range> ranges) {
@@ -389,13 +405,13 @@ uint32_t segment_address(const elf32_ph_entry &segment) {
     return segment.vaddr;
 }
 
-bool map_flash_to_sram(uint32_t addr, uint32_t size, uint32_t &mapped_addr) {
+bool map_flash_to_sram(uint32_t addr, uint32_t size, const MemoryLayout &layout, uint32_t &mapped_addr) {
     if (addr < kFlashStart) {
         return false;
     }
     uint32_t offset = addr - kFlashStart;
     mapped_addr = kSramStart + offset;
-    if (mapped_addr < kSramStart || mapped_addr + size > kSramEndRp2350) {
+    if (mapped_addr < kSramStart || mapped_addr + size > layout.sram_end) {
         return false;
     }
     return true;
@@ -436,6 +452,8 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    MemoryLayout memory_layout = memory_layout_for_product(match->product_id);
+
     IOReturn reset_ret = picoboot_reset(match->picoboot.iface, match->picoboot);
     if (reset_ret != kIOReturnSuccess) {
         std::cerr << "Warning: reset interface failed (IOKit error " << reset_ret << ").\n";
@@ -469,10 +487,10 @@ int main(int argc, char **argv) {
             if (data.empty()) {
                 continue;
             }
-            if (is_flash_address(addr)) {
+            if (is_flash_address(addr, memory_layout)) {
                 if (!allow_flash) {
                     uint32_t mapped_addr = 0;
-                    if (!map_flash_to_sram(addr, static_cast<uint32_t>(data.size()), mapped_addr)) {
+                    if (!map_flash_to_sram(addr, static_cast<uint32_t>(data.size()), memory_layout, mapped_addr)) {
                         skipped_flash_segments = true;
                         continue;
                     }
@@ -577,16 +595,17 @@ int main(int argc, char **argv) {
             ret = kIOReturnError;
         } else {
             uint32_t exec_addr = entry_point;
-            if (!allow_flash && is_flash_address(entry_point)) {
+            if (!allow_flash && is_flash_address(entry_point, memory_layout)) {
                 uint32_t mapped_addr = 0;
-                if (map_flash_to_sram(entry_point, 4, mapped_addr)) {
+                if (map_flash_to_sram(entry_point, 4, memory_layout, mapped_addr)) {
                     exec_addr = mapped_addr;
                 } else {
                     std::cerr << "Entry point 0x" << std::hex << entry_point
                               << " cannot be mirrored into SRAM. Use --flash to run from flash.\n";
                     ret = kIOReturnError;
                 }
-            } else if (!allow_flash && !is_sram_address(entry_point) && !is_flash_address(entry_point)) {
+            } else if (!allow_flash && !is_sram_address(entry_point, memory_layout) &&
+                       !is_flash_address(entry_point, memory_layout)) {
                 std::cerr << "Entry point 0x" << std::hex << entry_point << " is not in flash or SRAM.\n";
                 ret = kIOReturnError;
             }
