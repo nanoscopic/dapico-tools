@@ -6,6 +6,15 @@ on:
       tag:
         description: "Release tag to publish (e.g. 0.1.2)"
         required: true
+        type: string
+      commit_summary:
+        description: "Override homebrew-core commit summary (50 chars max)."
+        required: false
+        type: string
+      commit_body:
+        description: "Detailed homebrew-core commit description."
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -106,6 +115,8 @@ jobs:
         env:
           HOMEBREW_CORE_PAT: ${{ secrets.HOMEBREW_CORE_PAT }}
           TAG: ${{ inputs.tag }}
+          COMMIT_SUMMARY: ${{ inputs.commit_summary }}
+          COMMIT_BODY: ${{ inputs.commit_body }}
         run: |
           set -euo pipefail
           cd homebrew-core
@@ -122,7 +133,20 @@ jobs:
             exit 0
           fi
           git add Formula/d/dapico-tools.rb
-          git commit -m "Update dapico-tools formula for ${TAG}"
+          if [ -n "${COMMIT_SUMMARY}" ]; then
+            commit_summary="${COMMIT_SUMMARY}"
+          else
+            commit_summary="Update dapico-tools to version ${TAG}"
+          fi
+          if [ -n "${COMMIT_BODY}" ]; then
+            commit_body="${COMMIT_BODY}"
+          else
+            commit_body="Update the Homebrew formula for dapico-tools ${TAG}."
+          fi
+          commit_message_file="$(mktemp)"
+          printf "%s\n\n%s\n" "${commit_summary}" "${commit_body}" > "${commit_message_file}"
+          git commit -F "${commit_message_file}"
+          rm -f "${commit_message_file}"
           if git remote get-url origin >/dev/null 2>&1; then
             git remote set-url origin "https://x-access-token:${HOMEBREW_CORE_PAT}@github.com/nanoscopic/homebrew-core.git"
           else
