@@ -36,3 +36,4 @@ Reboot into BOOTSEL mode (requires a reset interface from the running firmware):
 
 - If the device is already in BOOTSEL mode and `--bootsel` is passed, the tool reports that no action is needed.
 - The BOOTSEL reboot path relies on the reset interface exposed by firmware built with the Pico SDK USB stdio reset interface.
+- NOTE: rebooting from APP MODE into BOOTSEL MODE via the reset interface is currently not working and needs investigation/fixing.
