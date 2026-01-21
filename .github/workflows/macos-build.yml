@@ -2,6 +2,10 @@ name: Build macOS binaries
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: Release version to publish (e.g. 1.2.3)
+        required: true
   release:
     types: [published]
 
@@ -10,6 +14,8 @@ jobs:
     runs-on: macos-latest
     env:
       BUILD_TYPE: Release
+      RELEASE_VERSION: ${{ github.event.inputs.version }}
+      CMAKE_OSX_ARCHITECTURES: arm64;x86_64
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -19,18 +25,20 @@ jobs:
 
       - name: Build pico-reboot
         run: |
-          cmake -S reboot_tool -B reboot_tool/build -DCMAKE_BUILD_TYPE=${BUILD_TYPE}
+          cmake -S reboot_tool -B reboot_tool/build -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DCMAKE_OSX_ARCHITECTURES="${CMAKE_OSX_ARCHITECTURES}"
           cmake --build reboot_tool/build --config ${BUILD_TYPE}
 
       - name: Build pico-load-iokit
         run: |
-          cmake -S load_tool_iokit -B load_tool_iokit/build -DCMAKE_BUILD_TYPE=${BUILD_TYPE}
+          cmake -S load_tool_iokit -B load_tool_iokit/build -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DCMAKE_OSX_ARCHITECTURES="${CMAKE_OSX_ARCHITECTURES}"
           cmake --build load_tool_iokit/build --config ${BUILD_TYPE}
 
       - name: Package artifacts
         run: |
           mkdir -p dist
-          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && -n "${RELEASE_VERSION}" ]]; then
+            VERSION=${RELEASE_VERSION}
+          elif [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
             VERSION=${GITHUB_REF_NAME}
           else
             VERSION=${GITHUB_SHA:0:7}
@@ -50,4 +58,12 @@ jobs:
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
+          files: dist/*.tar.gz
+
+      - name: Create release
+        if: github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_VERSION }}
+          name: Release ${{ env.RELEASE_VERSION }}
           files: dist/*.tar.gz
