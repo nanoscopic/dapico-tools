@@ -5,8 +5,6 @@
 #include <memory>
 #include <vector>
 
-#include "errors.h"
-
 struct elf32_header {
     uint32_t entry = 0;
     uint32_t phoff = 0;

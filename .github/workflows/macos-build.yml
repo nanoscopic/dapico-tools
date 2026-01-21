@@ -11,113 +11,30 @@ on:
 
 jobs:
   build-macos:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-15
-            arch: x86_64
-          - os: macos-15
-            arch: arm64
-    runs-on: ${{ matrix.os }}
+    runs-on: macos-15
     env:
       BUILD_TYPE: Release
       RELEASE_VERSION: ${{ github.event.inputs.version }}
-      CMAKE_OSX_ARCHITECTURES: ${{ matrix.arch }}
+      CMAKE_OSX_ARCHITECTURES: arm64;x86_64
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install libusb (arm64)
-        if: matrix.arch == 'arm64'
-        run: brew install libusb
-
-      - name: Install libusb (x86_64)
-        if: matrix.arch == 'x86_64'
-        run: |
-          if ! /usr/bin/pgrep oahd >/dev/null 2>&1; then
-            sudo /usr/sbin/softwareupdate --install-rosetta --agree-to-license
-          fi
-          if [[ ! -x /usr/local/bin/brew ]]; then
-            NONINTERACTIVE=1 /usr/bin/arch -x86_64 /bin/bash -lc \
-              "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-          fi
-          /usr/bin/arch -x86_64 /usr/local/bin/brew install libusb pkg-config cmake
-
-      - name: Build pico-reboot (arm64)
-        if: matrix.arch == 'arm64'
+      - name: Build pico-reboot
         run: |
           cmake -S reboot_tool -B reboot_tool/build -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DCMAKE_OSX_ARCHITECTURES="${CMAKE_OSX_ARCHITECTURES}"
           cmake --build reboot_tool/build --config ${BUILD_TYPE}
 
-      - name: Build pico-reboot (x86_64)
-        if: matrix.arch == 'x86_64'
+      - name: Build pico-load
         run: |
-          /usr/bin/arch -x86_64 /usr/bin/env \
-            PKG_CONFIG_PATH="/usr/local/lib/pkgconfig" \
-            CMAKE_PREFIX_PATH="/usr/local" \
-            /usr/local/bin/cmake -S reboot_tool -B reboot_tool/build -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DCMAKE_OSX_ARCHITECTURES="${CMAKE_OSX_ARCHITECTURES}"
-          /usr/bin/arch -x86_64 /usr/local/bin/cmake --build reboot_tool/build --config ${BUILD_TYPE}
-
-      - name: Build pico-load-iokit (arm64)
-        if: matrix.arch == 'arm64'
-        run: |
-          cmake -S load_tool_iokit -B load_tool_iokit/build -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DCMAKE_OSX_ARCHITECTURES="${CMAKE_OSX_ARCHITECTURES}"
-          cmake --build load_tool_iokit/build --config ${BUILD_TYPE}
-
-      - name: Build pico-load-iokit (x86_64)
-        if: matrix.arch == 'x86_64'
-        run: |
-          /usr/bin/arch -x86_64 /usr/bin/env \
-            PKG_CONFIG_PATH="/usr/local/lib/pkgconfig" \
-            CMAKE_PREFIX_PATH="/usr/local" \
-            /usr/local/bin/cmake -S load_tool_iokit -B load_tool_iokit/build -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DCMAKE_OSX_ARCHITECTURES="${CMAKE_OSX_ARCHITECTURES}"
-          /usr/bin/arch -x86_64 /usr/local/bin/cmake --build load_tool_iokit/build --config ${BUILD_TYPE}
+          cmake -S load_tool -B load_tool/build -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DCMAKE_OSX_ARCHITECTURES="${CMAKE_OSX_ARCHITECTURES}"
+          cmake --build load_tool/build --config ${BUILD_TYPE}
 
       - name: Collect build artifacts
         run: |
-          mkdir -p dist/${CMAKE_OSX_ARCHITECTURES}
-          cp reboot_tool/build/pico-reboot dist/${CMAKE_OSX_ARCHITECTURES}/pico-reboot
-          cp load_tool_iokit/build/pico-load-iokit dist/${CMAKE_OSX_ARCHITECTURES}/pico-load-iokit
-
-      - name: Upload workflow artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-${{ matrix.arch }}-binaries
-          path: dist/${{ matrix.arch }}/*
-
-  package-macos:
-    runs-on: macos-15
-    needs: build-macos
-    env:
-      RELEASE_VERSION: ${{ github.event.inputs.version }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download arm64 artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: macos-arm64-binaries
-          path: dist/arm64
-
-      - name: Download x86_64 artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: macos-x86_64-binaries
-          path: dist/x86_64
-
-      - name: Create universal binaries
-        run: |
           mkdir -p dist/universal
-          lipo -create \
-            dist/arm64/pico-reboot \
-            dist/x86_64/pico-reboot \
-            -output dist/universal/pico-reboot
-          lipo -create \
-            dist/arm64/pico-load-iokit \
-            dist/x86_64/pico-load-iokit \
-            -output dist/universal/pico-load-iokit
+          cp reboot_tool/build/pico-reboot dist/universal/pico-reboot
+          cp load_tool/build/pico-load dist/universal/pico-load
 
       - name: Package artifacts
         run: |
@@ -130,9 +47,9 @@ jobs:
             VERSION=${GITHUB_SHA:0:7}
           fi
           cp dist/universal/pico-reboot dist/packages/pico-reboot
-          cp dist/universal/pico-load-iokit dist/packages/pico-load-iokit
+          cp dist/universal/pico-load dist/packages/pico-load
           tar -czf "dist/packages/pico-reboot-${VERSION}-macos.tar.gz" -C dist/packages pico-reboot
-          tar -czf "dist/packages/pico-load-iokit-${VERSION}-macos.tar.gz" -C dist/packages pico-load-iokit
+          tar -czf "dist/packages/pico-load-${VERSION}-macos.tar.gz" -C dist/packages pico-load
 
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
