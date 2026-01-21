@@ -62,18 +62,43 @@ jobs:
           set -euo pipefail
           cd homebrew-core
           formula_path="Formula/d/dapico-tools.rb"
-          if [[ ! -f "$formula_path" ]]; then
-            echo "Formula not found: $formula_path" >&2
-            exit 1
-          fi
           python - <<'PY'
           import os
           import re
           from pathlib import Path
+          from textwrap import dedent
 
           formula_path = Path("Formula/d/dapico-tools.rb")
           url = os.environ["RELEASE_URL"]
           sha256 = os.environ["RELEASE_SHA256"]
+
+          if not formula_path.exists():
+              formula_path.parent.mkdir(parents=True, exist_ok=True)
+              new_content = dedent(
+                  f"""\
+                  class DapicoTools < Formula
+                    desc "macOS USB tools for RP2040-based boards"
+                    homepage "https://github.com/nanoscopic/dapico-tools"
+                    url "{url}"
+                    sha256 "{sha256}"
+                    license "BSD-3-Clause"
+                    depends_on "cmake" => :build
+
+                    def install
+                      system "cmake", "-S", ".", "-B", "build", *std_cmake_args
+                      system "cmake", "--build", "build"
+                      system "cmake", "--install", "build"
+                    end
+
+                    test do
+                      system "#{{bin}}/dapico-reboot", "--help"
+                      system "#{{bin}}/dapico-load", "--help"
+                    end
+                  end
+                  """
+              )
+              formula_path.write_text(new_content)
+              raise SystemExit(0)
 
           content = formula_path.read_text()
           new_content, url_count = re.subn(r'^\s*url\s+"[^"]+"\s*$', f'  url "{url}"', content, count=1, flags=re.M)
@@ -124,6 +149,7 @@ jobs:
             --repo Homebrew/homebrew-core \
             --head "nanoscopic:${branch}" \
             --base "${default_branch}" \
+            --draft \
             --title "Update dapico-tools formula for ${TAG}" \
             --body "## Summary
           - update the Homebrew formula for dapico-tools ${TAG}
