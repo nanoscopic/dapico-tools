@@ -8,28 +8,124 @@ on:
         required: true
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   update-formula:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout dapico-tools
         uses: actions/checkout@v4
 
-      - name: Update formula
-        run: ./scripts/release-homebrew.sh "${{ inputs.tag }}"
+      - name: Prepare release metadata
+        id: release
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          url="https://github.com/nanoscopic/dapico-tools/archive/refs/tags/${TAG}.tar.gz"
+          tmp_file="$(mktemp)"
+          trap 'rm -f "$tmp_file"' EXIT
+          curl -fsSL "$url" -o "$tmp_file"
+          sha256="$(sha256sum "$tmp_file" | awk '{print $1}')"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
 
-      - name: Create pull request
-        uses: peter-evans/create-pull-request@v6
+      - name: Checkout homebrew-core fork
+        uses: actions/checkout@v4
         with:
-          branch: "release/homebrew-${{ inputs.tag }}"
-          title: "Update Homebrew formula for dapico-tools ${{ inputs.tag }}"
-          commit-message: "Update Homebrew formula for ${{ inputs.tag }}"
-          body: |
-            ## Summary
-            - update the Homebrew formula to release tag ${{ inputs.tag }}
+          repository: nanoscopic/homebrew-core
+          token: ${{ secrets.HOMEBREW_CORE_PAT }}
+          path: homebrew-core
 
-            ## Testing
-            - not run (automated workflow)
+      - name: Sync fork with upstream homebrew-core
+        env:
+          HOMEBREW_CORE_PAT: ${{ secrets.HOMEBREW_CORE_PAT }}
+        run: |
+          set -euo pipefail
+          cd homebrew-core
+          git remote add upstream https://github.com/Homebrew/homebrew-core.git
+          git fetch upstream
+          default_branch="$(git remote show upstream | awk '/HEAD branch/ {print $NF}')"
+          git checkout "$default_branch"
+          git reset --hard "upstream/${default_branch}"
+          git remote set-url origin "https://x-access-token:${HOMEBREW_CORE_PAT}@github.com/nanoscopic/homebrew-core.git"
+          git push origin "$default_branch"
+
+      - name: Update dapico-tools formula
+        env:
+          RELEASE_URL: ${{ steps.release.outputs.url }}
+          RELEASE_SHA256: ${{ steps.release.outputs.sha256 }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          cd homebrew-core
+          formula_path="Formula/d/dapico-tools.rb"
+          if [[ ! -f "$formula_path" ]]; then
+            echo "Formula not found: $formula_path" >&2
+            exit 1
+          fi
+          python - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          formula_path = Path("Formula/d/dapico-tools.rb")
+          url = os.environ["RELEASE_URL"]
+          sha256 = os.environ["RELEASE_SHA256"]
+
+          content = formula_path.read_text()
+          new_content, url_count = re.subn(r'^\s*url\s+"[^"]+"\s*$', f'  url "{url}"', content, count=1, flags=re.M)
+          new_content, sha_count = re.subn(r'^\s*sha256\s+"[^"]+"\s*$', f'  sha256 "{sha256}"', new_content, count=1, flags=re.M)
+
+          if url_count == 0 or sha_count == 0:
+            raise SystemExit("Failed to locate url/sha256 entries in formula.")
+
+          formula_path.write_text(new_content)
+          PY
+
+      - name: Commit and push changes
+        env:
+          HOMEBREW_CORE_PAT: ${{ secrets.HOMEBREW_CORE_PAT }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          cd homebrew-core
+          branch="release/homebrew-${TAG}"
+          git checkout -B "$branch"
+          if git diff --quiet; then
+            echo "No formula changes detected; skipping commit."
+            exit 0
+          fi
+          git add Formula/d/dapico-tools.rb
+          git commit -m "Update dapico-tools formula for ${TAG}"
+          git remote set-url origin "https://x-access-token:${HOMEBREW_CORE_PAT}@github.com/nanoscopic/homebrew-core.git"
+          git push -u origin "$branch"
+
+      - name: Open pull request to Homebrew/homebrew-core
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_CORE_PAT }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          cd homebrew-core
+          branch="release/homebrew-${TAG}"
+          default_branch="$(git remote show upstream | awk '/HEAD branch/ {print $NF}')"
+          if ! git ls-remote --exit-code origin "refs/heads/${branch}" >/dev/null; then
+            echo "Branch ${branch} not found in fork; skipping PR."
+            exit 0
+          fi
+          if gh pr list --repo Homebrew/homebrew-core --head "nanoscopic:${branch}" --json number --jq 'length > 0' | grep -q true; then
+            echo "Pull request already exists for ${branch}."
+            exit 0
+          fi
+          gh pr create \
+            --repo Homebrew/homebrew-core \
+            --head "nanoscopic:${branch}" \
+            --base "${default_branch}" \
+            --title "Update dapico-tools formula for ${TAG}" \
+            --body "## Summary
+          - update the Homebrew formula for dapico-tools ${TAG}
+
+          ## Testing
+          - not run (automated workflow)"
