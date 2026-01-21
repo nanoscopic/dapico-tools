@@ -37,6 +37,8 @@ jobs:
           repository: nanoscopic/homebrew-core
           token: ${{ secrets.HOMEBREW_CORE_PAT }}
           path: homebrew-core
+          fetch-depth: 1
+          filter: blob:none
 
       - name: Sync fork with upstream homebrew-core
         env:
@@ -45,10 +47,9 @@ jobs:
           set -euo pipefail
           cd homebrew-core
           git remote add upstream https://github.com/Homebrew/homebrew-core.git
-          git fetch upstream
           default_branch="$(git remote show upstream | awk '/HEAD branch/ {print $NF}')"
-          git checkout "$default_branch"
-          git reset --hard "upstream/${default_branch}"
+          git fetch --depth=1 --filter=blob:none upstream "${default_branch}"
+          git checkout -B "$default_branch" "upstream/${default_branch}"
           git remote set-url origin "https://x-access-token:${HOMEBREW_CORE_PAT}@github.com/nanoscopic/homebrew-core.git"
           git push origin "$default_branch"
 
