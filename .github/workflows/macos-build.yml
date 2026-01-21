@@ -22,19 +22,19 @@ jobs:
 
       - name: Build pico-reboot
         run: |
-          cmake -S reboot_tool -B reboot_tool/build -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DCMAKE_OSX_ARCHITECTURES="${CMAKE_OSX_ARCHITECTURES}"
-          cmake --build reboot_tool/build --config ${BUILD_TYPE}
+          cmake -S dapico-reboot -B dapico-reboot/build -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DCMAKE_OSX_ARCHITECTURES="${CMAKE_OSX_ARCHITECTURES}"
+          cmake --build dapico-reboot/build --config ${BUILD_TYPE}
 
       - name: Build pico-load
         run: |
-          cmake -S load_tool -B load_tool/build -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DCMAKE_OSX_ARCHITECTURES="${CMAKE_OSX_ARCHITECTURES}"
-          cmake --build load_tool/build --config ${BUILD_TYPE}
+          cmake -S dapico-load -B dapico-load/build -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DCMAKE_OSX_ARCHITECTURES="${CMAKE_OSX_ARCHITECTURES}"
+          cmake --build dapico-load/build --config ${BUILD_TYPE}
 
       - name: Collect build artifacts
         run: |
           mkdir -p dist/universal
-          cp reboot_tool/build/pico-reboot dist/universal/pico-reboot
-          cp load_tool/build/pico-load dist/universal/pico-load
+          cp dapico-reboot/build/pico-reboot dist/universal/pico-reboot
+          cp dapico-load/build/pico-load dist/universal/pico-load
 
       - name: Package artifacts
         run: |
