@@ -305,7 +305,7 @@ IOReturn reboot_via_picoboot(IOUSBInterfaceInterface **iface, uint16_t product_i
 IOReturn reboot_via_reset_interface(IOUSBInterfaceInterface **iface, const ResetInterface &reset_iface,
                                     bool bootsel) {
     IOUSBDevRequest request{};
-    request.bmRequestType = USBmakebmRequestType(kUSBOut, kUSBClass, kUSBInterface);
+    request.bmRequestType = USBmakebmRequestType(kUSBOut, kUSBVendor, kUSBInterface);
     request.bRequest = bootsel ? RESET_REQUEST_BOOTSEL : RESET_REQUEST_FLASH;
     request.wValue = 0;
     request.wIndex = reset_iface.interface_number;
