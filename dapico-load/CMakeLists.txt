@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_executable(dapico-load
     src/main.cpp
+    src/dryrun.cpp
     src/elf.cc
 )
 
