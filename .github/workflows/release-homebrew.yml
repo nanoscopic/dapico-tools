@@ -1,0 +1,35 @@
+name: Release Homebrew Formula
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish (e.g. 0.1.2)"
+        required: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-formula:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Update formula
+        run: ./scripts/release-homebrew.sh "${{ inputs.tag }}"
+
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: "release/homebrew-${{ inputs.tag }}"
+          title: "Update Homebrew formula for dapico-tools ${{ inputs.tag }}"
+          commit-message: "Update Homebrew formula for ${{ inputs.tag }}"
+          body: |
+            ## Summary
+            - update the Homebrew formula to release tag ${{ inputs.tag }}
+
+            ## Testing
+            - not run (automated workflow)
