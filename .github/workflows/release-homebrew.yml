@@ -51,7 +51,7 @@ jobs:
           git fetch --depth=1 --filter=blob:none upstream "${default_branch}"
           git checkout -B "$default_branch" "upstream/${default_branch}"
           git remote set-url origin "https://x-access-token:${HOMEBREW_CORE_PAT}@github.com/nanoscopic/homebrew-core.git"
-          git push origin "$default_branch"
+          git push --force-with-lease origin "$default_branch"
 
       - name: Update dapico-tools formula
         env:
