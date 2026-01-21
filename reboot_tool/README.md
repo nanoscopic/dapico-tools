@@ -1,9 +1,9 @@
 # Pico Reboot (macOS)
 
-Minimal, self-contained reboot utility extracted from picotool. This tool supports macOS and uses the system IOKit USB stack to either:
+Minimal, self-contained reboot utility extracted from picotool. This tool supports macOS and uses the system IOKit USB stack to reboot between BOOTSEL MODE and APP MODE:
 
-- reboot a device currently in BOOTSEL mode back into the application, or
-- reboot a running device into BOOTSEL mode via the USB reset interface.
+- reboot a device in BOOTSEL MODE back into APP MODE, or
+- reboot a device in APP MODE into BOOTSEL MODE via the USB reset interface.
 
 ## Requirements
 
