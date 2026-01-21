@@ -1,4 +1,4 @@
-# Pico Reboot (macOS)
+# Dapico Reboot (macOS)
 
 Minimal, self-contained reboot utility extracted from picotool. This tool supports macOS and uses the system IOKit USB stack to reboot between BOOTSEL MODE and APP MODE:
 
@@ -18,18 +18,18 @@ cmake -S . -B build
 cmake --build build
 ```
 
-The resulting binary is `build/pico-reboot`.
+The resulting binary is `build/dapico-reboot`.
 
 ## Usage
 
 ```bash
-./build/pico-reboot
+./build/dapico-reboot
 ```
 
 Reboot into BOOTSEL mode (requires a reset interface from the running firmware):
 
 ```bash
-./build/pico-reboot --bootsel
+./build/dapico-reboot --bootsel
 ```
 
 ## Notes
