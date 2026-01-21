@@ -21,13 +21,13 @@ That narrow scope makes the tools:
 ## Tool overview
 
 ### `reboot_tool`
-A focused utility for reboot-related workflows in this ecosystem. It is designed to do one job well and relies on macOS-native APIs where possible.
+A focused reboot utility for Pico devices that uses the USB reset interface and BOOTSEL picoboot commands. This tool is macOS-specific in this repo, matching the macOS-only support described in its standalone README and build requirements.
 
 ### `load_tool`
-A lightweight loader tool intended to perform its specific load workflow without any cross-platform scaffolding. It exists to keep the workflow direct and macOS-native.
+A lightweight loader that speaks PICOBOOT over `libusb` and only accepts **stripped ELF** inputs (no UF2/BIN support). The implementation is cross-platform compatible thanks to `libusb`, with no macOS-only frameworks required.
 
 ### `load_tool_iokit`
-A variant of the loader that uses IOKit for device interaction, emphasizing the “small, official Apple API” goal even further.
+A macOS-specific loader that uses the system IOKit USB stack directly instead of `libusb`, while still only accepting **stripped ELF** inputs.
 
 ## Why keep them standalone?
 
