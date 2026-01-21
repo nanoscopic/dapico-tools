@@ -15,9 +15,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-13
+          - os: macos-15
             arch: x86_64
-          - os: macos-14
+          - os: macos-15
             arch: arm64
     runs-on: ${{ matrix.os }}
     env:
@@ -54,7 +54,7 @@ jobs:
           path: dist/${{ matrix.arch }}/*
 
   package-macos:
-    runs-on: macos-14
+    runs-on: macos-15
     needs: build-macos
     env:
       RELEASE_VERSION: ${{ github.event.inputs.version }}
