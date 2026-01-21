@@ -1,6 +1,6 @@
 # Pico Reboot (macOS)
 
-Minimal, self-contained reboot utility extracted from picotool. This tool supports macOS and uses `libusb` to either:
+Minimal, self-contained reboot utility extracted from picotool. This tool supports macOS and uses the system IOKit USB stack to either:
 
 - reboot a device currently in BOOTSEL mode back into the application, or
 - reboot a running device into BOOTSEL mode via the USB reset interface.
@@ -9,13 +9,7 @@ Minimal, self-contained reboot utility extracted from picotool. This tool suppor
 
 - macOS
 - CMake 3.16+
-- `libusb-1.0`
-
-Install libusb via Homebrew:
-
-```bash
-brew install libusb
-```
+- Xcode Command Line Tools (for IOKit/CoreFoundation headers)
 
 ## Build
 
