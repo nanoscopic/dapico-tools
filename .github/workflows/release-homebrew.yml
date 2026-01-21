@@ -142,9 +142,12 @@ jobs:
           fi
           if gh pr list --repo Homebrew/homebrew-core --head "nanoscopic:${branch}" --json number --jq 'length > 0' | grep -q true; then
             echo "Pull request already exists for ${branch}."
+            pr_url="$(gh pr view --repo Homebrew/homebrew-core --head "nanoscopic:${branch}" --json url --jq '.url')"
+            echo "Draft PR: ${pr_url}"
+            echo "Draft PR: ${pr_url}" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          gh pr create \
+          pr_url="$(gh pr create \
             --repo Homebrew/homebrew-core \
             --head "nanoscopic:${branch}" \
             --base "main" \
@@ -154,4 +157,6 @@ jobs:
           - update the Homebrew formula for dapico-tools ${TAG}
 
           ## Testing
-          - not run (automated workflow)"
+          - not run (automated workflow)")"
+          echo "Draft PR: ${pr_url}"
+          echo "Draft PR: ${pr_url}" >> "$GITHUB_STEP_SUMMARY"
