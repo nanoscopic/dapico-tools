@@ -31,27 +31,14 @@ jobs:
           echo "url=$url" >> "$GITHUB_OUTPUT"
           echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
 
-      - name: Checkout homebrew-core fork
-        uses: actions/checkout@v4
-        with:
-          repository: nanoscopic/homebrew-core
-          token: ${{ secrets.HOMEBREW_CORE_PAT }}
-          path: homebrew-core
-          fetch-depth: 1
-          filter: blob:none
-
-      - name: Sync fork with upstream homebrew-core
-        env:
-          HOMEBREW_CORE_PAT: ${{ secrets.HOMEBREW_CORE_PAT }}
+      - name: Prepare homebrew-core base
         run: |
           set -euo pipefail
+          mkdir -p homebrew-core
           cd homebrew-core
-          git remote add upstream https://github.com/Homebrew/homebrew-core.git
-          default_branch="$(git remote show upstream | awk '/HEAD branch/ {print $NF}')"
-          git fetch --depth=1 --filter=blob:none upstream "${default_branch}"
-          git checkout -B "$default_branch" "upstream/${default_branch}"
-          git remote set-url origin "https://x-access-token:${HOMEBREW_CORE_PAT}@github.com/nanoscopic/homebrew-core.git"
-          git push --force-with-lease origin "$default_branch"
+          git init
+          git fetch --depth=1 https://github.com/Homebrew/homebrew-core.git main
+          git checkout -B pr-base FETCH_HEAD
 
       - name: Update dapico-tools formula
         id: update-formula
@@ -149,7 +136,6 @@ jobs:
           else
             branch="update-formula-dapico-tools-to-${TAG}"
           fi
-          default_branch="$(git remote show upstream | awk '/HEAD branch/ {print $NF}')"
           if ! git ls-remote --exit-code origin "refs/heads/${branch}" >/dev/null; then
             echo "Branch ${branch} not found in fork; skipping PR."
             exit 0
@@ -161,7 +147,7 @@ jobs:
           gh pr create \
             --repo Homebrew/homebrew-core \
             --head "nanoscopic:${branch}" \
-            --base "${default_branch}" \
+            --base "main" \
             --draft \
             --title "Update dapico-tools formula for ${TAG}" \
             --body "## Summary
