@@ -54,6 +54,7 @@ jobs:
           git push --force-with-lease origin "$default_branch"
 
       - name: Update dapico-tools formula
+        id: update-formula
         env:
           RELEASE_URL: ${{ steps.release.outputs.url }}
           RELEASE_SHA256: ${{ steps.release.outputs.sha256 }}
@@ -72,7 +73,11 @@ jobs:
           url = os.environ["RELEASE_URL"]
           sha256 = os.environ["RELEASE_SHA256"]
 
-          if not formula_path.exists():
+          is_new = not formula_path.exists()
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"is_new={str(is_new).lower()}\n")
+
+          if is_new:
               formula_path.parent.mkdir(parents=True, exist_ok=True)
               new_content = dedent(
                   f"""\
@@ -117,9 +122,13 @@ jobs:
         run: |
           set -euo pipefail
           cd homebrew-core
-          branch="release/homebrew-${TAG}"
+          if [ "${{ steps.update-formula.outputs.is_new }}" = "true" ]; then
+            branch="add-formula-dapico-tools"
+          else
+            branch="update-formula-dapico-tools-to-${TAG}"
+          fi
           git checkout -B "$branch"
-          if git diff --quiet; then
+          if [ -z "$(git status --porcelain)" ]; then
             echo "No formula changes detected; skipping commit."
             exit 0
           fi
@@ -135,7 +144,11 @@ jobs:
         run: |
           set -euo pipefail
           cd homebrew-core
-          branch="release/homebrew-${TAG}"
+          if [ "${{ steps.update-formula.outputs.is_new }}" = "true" ]; then
+            branch="add-formula-dapico-tools"
+          else
+            branch="update-formula-dapico-tools-to-${TAG}"
+          fi
           default_branch="$(git remote show upstream | awk '/HEAD branch/ {print $NF}')"
           if ! git ls-remote --exit-code origin "refs/heads/${branch}" >/dev/null; then
             echo "Branch ${branch} not found in fork; skipping PR."
