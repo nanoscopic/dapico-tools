@@ -132,7 +132,7 @@ jobs:
 
       - name: Open pull request to Homebrew/homebrew-core
         env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_CORE_PAT }}
+          GH_TOKEN: ${{ secrets.MAKE_PR_PAT }}
           TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
