@@ -1,12 +1,13 @@
-#include <libusb.h>
+#include <CoreFoundation/CoreFoundation.h>
+#include <IOKit/IOCFPlugIn.h>
+#include <IOKit/IOKitLib.h>
+#include <IOKit/usb/IOUSBLib.h>
+#include <IOKit/usb/USBSpec.h>
 
 #include <cstdint>
-#include <cstdlib>
-#include <cstring>
 #include <iostream>
 #include <optional>
 #include <string>
-#include <vector>
 
 #include "boot/picoboot.h"
 #include "pico/stdio_usb/reset_interface.h"
@@ -17,20 +18,22 @@ constexpr uint16_t kProductIdRp2040UsbBoot = 0x0003;
 constexpr uint16_t kProductIdRp2350UsbBoot = 0x000f;
 constexpr uint16_t kProductIdRp2040StdioUsb = 0x000a;
 constexpr uint16_t kProductIdRp2350StdioUsb = 0x0009;
+constexpr uint32_t kUsbTimeoutMs = 3000;
 
 struct PicobootInterface {
-    uint8_t interface_number{};
-    uint8_t ep_in{};
-    uint8_t ep_out{};
+    UInt8 interface_number{};
+    UInt8 pipe_in{};
+    UInt8 pipe_out{};
+    IOUSBInterfaceInterface **iface{};
 };
 
 struct ResetInterface {
-    uint8_t interface_number{};
+    UInt8 interface_number{};
+    IOUSBInterfaceInterface **iface{};
 };
 
 struct DeviceMatch {
-    libusb_device *device{};
-    libusb_device_handle *handle{};
+    IOUSBDeviceInterface **device{};
     uint16_t product_id{};
     std::optional<PicobootInterface> picoboot;
     std::optional<ResetInterface> reset;
@@ -39,116 +42,246 @@ struct DeviceMatch {
 void print_usage(const char *argv0) {
     std::cout << "Usage: " << argv0 << " [--bootsel] [--verbose]\n"
               << "  --bootsel  Reboot into BOOTSEL mode (if reset interface is available)\n"
-              << "  --verbose  Enable libusb debug output\n";
+              << "  --verbose  Enable extra logging\n";
 }
 
-bool is_picoboot_interface(const libusb_interface_descriptor &desc, uint8_t &ep_in, uint8_t &ep_out) {
-    if (desc.bInterfaceClass != 0xff || desc.bNumEndpoints != 2) {
-        return false;
+uint32_t cf_number_to_uint32(CFTypeRef value) {
+    if (!value || CFGetTypeID(value) != CFNumberGetTypeID()) {
+        return 0;
     }
-    ep_in = 0;
-    ep_out = 0;
-    for (int i = 0; i < desc.bNumEndpoints; ++i) {
-        const auto &endpoint = desc.endpoint[i];
-        if (endpoint.bEndpointAddress & LIBUSB_ENDPOINT_IN) {
-            ep_in = endpoint.bEndpointAddress;
-        } else {
-            ep_out = endpoint.bEndpointAddress;
-        }
-    }
-    return ep_in != 0 && ep_out != 0;
+    uint32_t out = 0;
+    CFNumberGetValue(static_cast<CFNumberRef>(value), kCFNumberSInt32Type, &out);
+    return out;
 }
 
-std::optional<DeviceMatch> find_device(libusb_context *ctx) {
-    libusb_device **list = nullptr;
-    ssize_t count = libusb_get_device_list(ctx, &list);
-    if (count < 0) {
+IOUSBDeviceInterface **create_device_interface(io_service_t device_service) {
+    IOCFPlugInInterface **plug_in = nullptr;
+    SInt32 score = 0;
+    IOReturn ret = IOCreatePlugInInterfaceForService(device_service, kIOUSBDeviceUserClientTypeID,
+                                                     kIOCFPlugInInterfaceID, &plug_in, &score);
+    if (ret != kIOReturnSuccess || !plug_in) {
+        return nullptr;
+    }
+
+    IOUSBDeviceInterface **device = nullptr;
+    HRESULT result = (*plug_in)->QueryInterface(plug_in, CFUUIDGetUUIDBytes(kIOUSBDeviceInterfaceID),
+                                                reinterpret_cast<void **>(&device));
+    (*plug_in)->Release(plug_in);
+    if (result || !device) {
+        return nullptr;
+    }
+    return device;
+}
+
+IOUSBInterfaceInterface **create_interface_interface(io_service_t interface_service) {
+    IOCFPlugInInterface **plug_in = nullptr;
+    SInt32 score = 0;
+    IOReturn ret = IOCreatePlugInInterfaceForService(interface_service, kIOUSBInterfaceUserClientTypeID,
+                                                     kIOCFPlugInInterfaceID, &plug_in, &score);
+    if (ret != kIOReturnSuccess || !plug_in) {
+        return nullptr;
+    }
+
+    IOUSBInterfaceInterface **iface = nullptr;
+    HRESULT result = (*plug_in)->QueryInterface(plug_in, CFUUIDGetUUIDBytes(kIOUSBInterfaceInterfaceID),
+                                                reinterpret_cast<void **>(&iface));
+    (*plug_in)->Release(plug_in);
+    if (result || !iface) {
+        return nullptr;
+    }
+    return iface;
+}
+
+bool is_supported_product(uint32_t product_id) {
+    return product_id == kProductIdRp2040UsbBoot || product_id == kProductIdRp2350UsbBoot ||
+           product_id == kProductIdRp2040StdioUsb || product_id == kProductIdRp2350StdioUsb;
+}
+
+std::optional<DeviceMatch> find_device(bool verbose) {
+    CFMutableDictionaryRef matching = IOServiceMatching(kIOUSBDeviceClassName);
+    if (!matching) {
+        return std::nullopt;
+    }
+
+    io_iterator_t iterator = 0;
+    if (IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iterator) != kIOReturnSuccess) {
         return std::nullopt;
     }
 
     std::optional<DeviceMatch> match;
-    for (ssize_t idx = 0; idx < count; ++idx) {
-        libusb_device *device = list[idx];
-        libusb_device_descriptor desc;
-        if (libusb_get_device_descriptor(device, &desc) != 0) {
-            continue;
+    io_service_t device_service = 0;
+    while ((device_service = IOIteratorNext(iterator)) != 0) {
+        CFTypeRef vendor_ref = IORegistryEntryCreateCFProperty(device_service, CFSTR(kUSBVendorID),
+                                                               kCFAllocatorDefault, 0);
+        CFTypeRef product_ref = IORegistryEntryCreateCFProperty(device_service, CFSTR(kUSBProductID),
+                                                                kCFAllocatorDefault, 0);
+        uint32_t vendor_id = cf_number_to_uint32(vendor_ref);
+        uint32_t product_id = cf_number_to_uint32(product_ref);
+        if (vendor_ref) {
+            CFRelease(vendor_ref);
         }
-        if (desc.idVendor != kVendorIdRaspberryPi) {
+        if (product_ref) {
+            CFRelease(product_ref);
+        }
+
+        if (vendor_id != kVendorIdRaspberryPi || !is_supported_product(product_id)) {
+            IOObjectRelease(device_service);
             continue;
         }
 
-        libusb_config_descriptor *config = nullptr;
-        if (libusb_get_active_config_descriptor(device, &config) != 0) {
+        IOUSBDeviceInterface **device = create_device_interface(device_service);
+        if (!device) {
+            IOObjectRelease(device_service);
+            continue;
+        }
+        if ((*device)->USBDeviceOpen(device) != kIOReturnSuccess) {
+            (*device)->Release(device);
+            IOObjectRelease(device_service);
             continue;
         }
 
-        DeviceMatch candidate{};
-        candidate.device = device;
-        candidate.product_id = desc.idProduct;
+        IOUSBFindInterfaceRequest request;
+        request.bInterfaceClass = kIOUSBFindInterfaceDontCare;
+        request.bInterfaceSubClass = kIOUSBFindInterfaceDontCare;
+        request.bInterfaceProtocol = kIOUSBFindInterfaceDontCare;
+        request.bAlternateSetting = kIOUSBFindInterfaceDontCare;
 
-        for (uint8_t i = 0; i < config->bNumInterfaces; ++i) {
-            const auto &interface = config->interface[i];
-            if (interface.num_altsetting == 0) {
+        io_iterator_t iface_iterator = 0;
+        if ((*device)->CreateInterfaceIterator(device, &request, &iface_iterator) != kIOReturnSuccess) {
+            (*device)->USBDeviceClose(device);
+            (*device)->Release(device);
+            IOObjectRelease(device_service);
+            continue;
+        }
+
+        std::optional<PicobootInterface> picoboot;
+        std::optional<ResetInterface> reset;
+
+        io_service_t interface_service = 0;
+        while ((interface_service = IOIteratorNext(iface_iterator)) != 0) {
+            IOUSBInterfaceInterface **iface = create_interface_interface(interface_service);
+            IOObjectRelease(interface_service);
+            if (!iface) {
                 continue;
             }
-            const auto &alt = interface.altsetting[0];
-            if (alt.bInterfaceClass == 0xff &&
-                alt.bInterfaceSubClass == RESET_INTERFACE_SUBCLASS &&
-                alt.bInterfaceProtocol == RESET_INTERFACE_PROTOCOL) {
-                candidate.reset = ResetInterface{alt.bInterfaceNumber};
+            if ((*iface)->USBInterfaceOpen(iface) != kIOReturnSuccess) {
+                (*iface)->Release(iface);
                 continue;
             }
-            uint8_t ep_in = 0;
-            uint8_t ep_out = 0;
-            if (is_picoboot_interface(alt, ep_in, ep_out)) {
-                candidate.picoboot = PicobootInterface{alt.bInterfaceNumber, ep_in, ep_out};
+
+            UInt8 interface_class = 0;
+            UInt8 interface_subclass = 0;
+            UInt8 interface_protocol = 0;
+            UInt8 interface_number = 0;
+            (*iface)->GetInterfaceClass(iface, &interface_class);
+            (*iface)->GetInterfaceSubClass(iface, &interface_subclass);
+            (*iface)->GetInterfaceProtocol(iface, &interface_protocol);
+            (*iface)->GetInterfaceNumber(iface, &interface_number);
+
+            if (verbose) {
+                std::cout << "Found interface " << static_cast<int>(interface_number)
+                          << " class=" << static_cast<int>(interface_class)
+                          << " subclass=" << static_cast<int>(interface_subclass)
+                          << " protocol=" << static_cast<int>(interface_protocol) << "\n";
+            }
+
+            bool matched = false;
+            if (interface_class == 0xff && interface_subclass == RESET_INTERFACE_SUBCLASS &&
+                interface_protocol == RESET_INTERFACE_PROTOCOL) {
+                reset = ResetInterface{interface_number, iface};
+                matched = true;
+            }
+
+            if (interface_class == 0xff && !picoboot) {
+                UInt8 num_endpoints = 0;
+                (*iface)->GetNumEndpoints(iface, &num_endpoints);
+
+                UInt8 pipe_in = 0;
+                UInt8 pipe_out = 0;
+                for (UInt8 pipe_ref = 1; pipe_ref <= num_endpoints; ++pipe_ref) {
+                    UInt8 direction = 0;
+                    UInt8 number = 0;
+                    UInt8 transfer_type = 0;
+                    UInt16 max_packet = 0;
+                    UInt8 interval = 0;
+                    if ((*iface)->GetPipeProperties(iface, pipe_ref, &direction, &number, &transfer_type,
+                                                    &max_packet, &interval) != kIOReturnSuccess) {
+                        continue;
+                    }
+                    if (transfer_type != kUSBBulk) {
+                        continue;
+                    }
+                    if (direction == kUSBIn) {
+                        pipe_in = pipe_ref;
+                    } else if (direction == kUSBOut) {
+                        pipe_out = pipe_ref;
+                    }
+                }
+
+                if (pipe_in != 0 && pipe_out != 0) {
+                    picoboot = PicobootInterface{interface_number, pipe_in, pipe_out, iface};
+                    matched = true;
+                }
+            }
+
+            if (!matched) {
+                (*iface)->USBInterfaceClose(iface);
+                (*iface)->Release(iface);
+            }
+
+            if (picoboot && reset) {
+                break;
             }
         }
 
-        libusb_free_config_descriptor(config);
-
-        if (candidate.picoboot || candidate.reset) {
-            match = candidate;
+        IOObjectRelease(iface_iterator);
+        if (picoboot || reset) {
+            match = DeviceMatch{device, static_cast<uint16_t>(product_id), picoboot, reset};
+            IOObjectRelease(device_service);
             break;
         }
+
+        if (picoboot) {
+            (*picoboot->iface)->USBInterfaceClose(picoboot->iface);
+            (*picoboot->iface)->Release(picoboot->iface);
+        }
+        if (reset) {
+            (*reset->iface)->USBInterfaceClose(reset->iface);
+            (*reset->iface)->Release(reset->iface);
+        }
+        (*device)->USBDeviceClose(device);
+        (*device)->Release(device);
+        IOObjectRelease(device_service);
     }
 
-    libusb_free_device_list(list, 1);
+    IOObjectRelease(iterator);
     return match;
 }
 
-int claim_interface(libusb_device_handle *handle, uint8_t interface_number) {
-#if defined(LIBUSB_API_VERSION) && LIBUSB_API_VERSION >= 0x0100010A
-    libusb_set_auto_detach_kernel_driver(handle, 1);
-#endif
-    return libusb_claim_interface(handle, interface_number);
-}
+IOReturn send_picoboot_command(IOUSBInterfaceInterface **iface, const PicobootInterface &picoboot,
+                               picoboot_cmd &cmd) {
+    static uint32_t token = 1;
+    cmd.dMagic = PICOBOOT_MAGIC;
+    cmd.dToken = token++;
 
-int send_picoboot_command(libusb_device_handle *handle, const PicobootInterface &iface, struct picoboot_cmd &cmd) {
-    int sent = 0;
-    int ret = libusb_bulk_transfer(handle, iface.ep_out, reinterpret_cast<uint8_t *>(&cmd), sizeof(cmd), &sent, 3000);
-    if (ret != 0 || sent != static_cast<int>(sizeof(cmd))) {
-        return ret != 0 ? ret : LIBUSB_ERROR_IO;
+    IOReturn ret = (*iface)->WritePipeTO(iface, picoboot.pipe_out, &cmd, sizeof(cmd), kUsbTimeoutMs, kUsbTimeoutMs);
+    if (ret != kIOReturnSuccess) {
+        return ret;
     }
 
     uint8_t ack = 0;
-    int received = 0;
-    ret = libusb_bulk_transfer(handle, iface.ep_in, &ack, 1, &received, 3000);
-    if (ret != 0) {
-        return ret;
-    }
-    return 0;
+    UInt32 ack_len = 1;
+    return (*iface)->ReadPipeTO(iface, picoboot.pipe_in, &ack, &ack_len, kUsbTimeoutMs, kUsbTimeoutMs);
 }
 
-int reboot_via_picoboot(libusb_device_handle *handle, uint16_t product_id, const PicobootInterface &iface, bool bootsel) {
+IOReturn reboot_via_picoboot(IOUSBInterfaceInterface **iface, uint16_t product_id,
+                             const PicobootInterface &picoboot, bool bootsel) {
     if (bootsel) {
         std::cout << "Device is already in BOOTSEL mode.\n";
-        return 0;
+        return kIOReturnSuccess;
     }
 
-    struct picoboot_cmd cmd{};
-    cmd.dMagic = PICOBOOT_MAGIC;
-    cmd.dToken = 1;
+    picoboot_cmd cmd{};
     cmd.dTransferLength = 0;
 
     if (product_id == kProductIdRp2350UsbBoot) {
@@ -166,27 +299,35 @@ int reboot_via_picoboot(libusb_device_handle *handle, uint16_t product_id, const
         cmd.reboot_cmd.dDelayMS = 500;
     }
 
-    int claim = claim_interface(handle, iface.interface_number);
-    if (claim != 0) {
-        return claim;
-    }
-
-    int ret = send_picoboot_command(handle, iface, cmd);
-    libusb_release_interface(handle, iface.interface_number);
-    return ret;
+    return send_picoboot_command(iface, picoboot, cmd);
 }
 
-int reboot_via_reset_interface(libusb_device_handle *handle, const ResetInterface &iface, bool bootsel) {
-    int claim = claim_interface(handle, iface.interface_number);
-    if (claim != 0) {
-        return claim;
-    }
+IOReturn reboot_via_reset_interface(IOUSBInterfaceInterface **iface, const ResetInterface &reset_iface,
+                                    bool bootsel) {
+    IOUSBDevRequest request{};
+    request.bmRequestType = USBmakebmRequestType(kUSBOut, kUSBClass, kUSBInterface);
+    request.bRequest = bootsel ? RESET_REQUEST_BOOTSEL : RESET_REQUEST_FLASH;
+    request.wValue = 0;
+    request.wIndex = reset_iface.interface_number;
+    request.wLength = 0;
+    request.pData = nullptr;
+    return (*iface)->ControlRequest(iface, 0, &request);
+}
 
-    uint8_t request = bootsel ? RESET_REQUEST_BOOTSEL : RESET_REQUEST_FLASH;
-    int ret = libusb_control_transfer(handle, LIBUSB_REQUEST_TYPE_CLASS | LIBUSB_RECIPIENT_INTERFACE,
-                                      request, 0, iface.interface_number, nullptr, 0, 2000);
-    libusb_release_interface(handle, iface.interface_number);
-    return ret;
+void close_interface(IOUSBInterfaceInterface **iface) {
+    if (!iface) {
+        return;
+    }
+    (*iface)->USBInterfaceClose(iface);
+    (*iface)->Release(iface);
+}
+
+void close_device(IOUSBDeviceInterface **device) {
+    if (!device) {
+        return;
+    }
+    (*device)->USBDeviceClose(device);
+    (*device)->Release(device);
 }
 } // namespace
 
@@ -210,60 +351,48 @@ int main(int argc, char **argv) {
         }
     }
 
-    libusb_context *ctx = nullptr;
-    if (libusb_init(&ctx) != 0) {
-        std::cerr << "Failed to initialize libusb.\n";
-        return 1;
-    }
-
-    if (verbose) {
-        libusb_set_option(ctx, LIBUSB_OPTION_LOG_LEVEL, LIBUSB_LOG_LEVEL_INFO);
-    }
-
-    auto match = find_device(ctx);
+    auto match = find_device(verbose);
     if (!match) {
         std::cerr << "No Raspberry Pi USB device found.\n";
-        libusb_exit(ctx);
         return 1;
     }
 
-    libusb_device_handle *handle = nullptr;
-    if (libusb_open(match->device, &handle) != 0 || !handle) {
-        std::cerr << "Failed to open USB device.\n";
-        libusb_exit(ctx);
-        return 1;
-    }
-
-    int ret = 0;
+    IOReturn ret = kIOReturnSuccess;
     if (bootsel) {
         if (match->reset) {
-            ret = reboot_via_reset_interface(handle, *match->reset, true);
+            ret = reboot_via_reset_interface(match->reset->iface, *match->reset, true);
         } else if (match->picoboot) {
-            ret = reboot_via_picoboot(handle, match->product_id, *match->picoboot, true);
+            ret = reboot_via_picoboot(match->picoboot->iface, match->product_id, *match->picoboot, true);
         } else {
             std::cerr << "Device does not expose a reset or picoboot interface.\n";
-            ret = 1;
+            ret = kIOReturnError;
         }
     } else {
         if (match->picoboot) {
-            ret = reboot_via_picoboot(handle, match->product_id, *match->picoboot, false);
+            ret = reboot_via_picoboot(match->picoboot->iface, match->product_id, *match->picoboot, false);
         } else if (match->reset) {
-            ret = reboot_via_reset_interface(handle, *match->reset, false);
+            ret = reboot_via_reset_interface(match->reset->iface, *match->reset, false);
         } else {
             std::cerr << "Device does not expose a reset or picoboot interface.\n";
-            ret = 1;
+            ret = kIOReturnError;
         }
     }
 
-    if (ret != 0) {
-        std::cerr << "Reboot request failed (libusb error " << ret << ").\n";
+    if (ret != kIOReturnSuccess) {
+        std::cerr << "Reboot request failed (IOReturn " << ret << ").\n";
     } else if (!bootsel) {
         std::cout << "Reboot request sent.\n";
     } else if (match->reset) {
         std::cout << "Requested reboot into BOOTSEL mode.\n";
     }
 
-    libusb_close(handle);
-    libusb_exit(ctx);
-    return ret == 0 ? 0 : 1;
+    if (match->picoboot) {
+        close_interface(match->picoboot->iface);
+    }
+    if (match->reset) {
+        close_interface(match->reset->iface);
+    }
+    close_device(match->device);
+
+    return ret == kIOReturnSuccess ? 0 : 1;
 }
