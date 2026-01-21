@@ -123,7 +123,11 @@ jobs:
           fi
           git add Formula/d/dapico-tools.rb
           git commit -m "Update dapico-tools formula for ${TAG}"
-          git remote set-url origin "https://x-access-token:${HOMEBREW_CORE_PAT}@github.com/nanoscopic/homebrew-core.git"
+          if git remote get-url origin >/dev/null 2>&1; then
+            git remote set-url origin "https://x-access-token:${HOMEBREW_CORE_PAT}@github.com/nanoscopic/homebrew-core.git"
+          else
+            git remote add origin "https://x-access-token:${HOMEBREW_CORE_PAT}@github.com/nanoscopic/homebrew-core.git"
+          fi
           git push -u origin "$branch"
 
       - name: Open pull request to Homebrew/homebrew-core
